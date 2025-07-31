@@ -1,9 +1,11 @@
 #' #######################################################################################
 #' Power Analysis Script
-#' Originally authored by Eric R Sokol (esokol@battelleecology.org) with input from Andrew L. and 
+#' Originally authored by Eric R Sokol (esokol@battelleecology.org) with input from Andrew L.
 #' for use with HBP data (last updated for that purpose 2018 Dec 6)
 #' Sam Simkin modified for BBC data, starting 2024 Aug 3
 #' #######################################################################################
+
+# The prerequisite for running this script is running the "BBC_field_03 year effect.R" script.
 
 # User defined variables -- change these to modify script
 
@@ -23,21 +25,20 @@ library(lme4)
 
 ########################################################################################
 
-# try all models that converged only for "All herbaceous plants"
+# try all models that converged
 if(! exists('data_nested')) load(file='data_nested.rda')
-data_mods_nested_to_analyze <- data_nested %>% filter(!is.na(mods)) %>%   #  & sizeCategory == "total"
+data_mods_nested_to_analyze <- data_nested %>% filter(!is.na(mods)) %>%
    mutate(n_boutNumber = 1) # start with previously determined model structure and then impose year effect in this script
 data_mods_nested_to_analyze$form <- gsub('response_log ~ ','response_log ~ year + ',data_mods_nested_to_analyze$form)
 
-stature_year <- read.delim("stature_year.txt", header = TRUE, sep = "\t")
 data_mods_nested_to_analyze <- data_mods_nested_to_analyze %>% left_join (stature_year, by = "siteID")
 
 
 #######################################
-######################################
+#######################################
 # - FUNCTIONS
-######################################
-##################################
+#######################################
+#######################################
 #' Simulate percent cover based on a fit lmer object
 #'
 #' @param plots_per_site 
@@ -84,7 +85,7 @@ sim_change_data <- function(
   coefficients = fixef(fit_model)
   
   if(grepl('(?i)log', y_var_name)){
-    y0 <- expm1(coefficients[["(Intercept)"]]) # if log1p (natural log of 1 +x) transformation had been used (I changed input data to be this on 2024-08-02)
+    y0 <- expm1(coefficients[["(Intercept)"]])
     year_effect <-  log1p(y0 * year_percent_change + y0) - log1p(y0)
   }else{
     y0 <- coefficients[["(Intercept)"]]
@@ -240,12 +241,12 @@ get_tval_lmer <- function(x, form_updated) {
 ##############################
 # -- END FUNCTIONS
 ######################
-#####################
+######################
 
 # initialize results data frame that script will write to csv
 data_power_analysis_results <- data.frame()
 
-# loop for each site/species combination
+# loop for each site/species combination, applying to each scenario in design_settings matrix
 for(i_row in 1:nrow(data_mods_nested_to_analyze)){
     
   try({
@@ -256,9 +257,8 @@ for(i_row in 1:nrow(data_mods_nested_to_analyze)){
     mod <- data_mods_nested_i$mods[[1]]
     n_bout <- data_mods_nested_i$n_boutNumber[[1]]
     stature <- data_mods_nested_i$stature[[1]]
-    # form <- data_mods_nested_i$form[[1]] %>% gsub('\\(1\\|year\\)', 'year', .) %>% as.formula()
-    # mod <- glmmTMB(formula = form, data = df, family = tweedie)
-    
+
+# create design settings matrix
 if(stature == "small"){
 design_settings = 
       crossing(
@@ -328,7 +328,6 @@ design_settings <- design_settings %>%
       data_power_analysis_results_i <- data.frame(
         siteID = data_mods_nested_i$siteID,
         sizeCategory = data_mods_nested_i$sizeCategory,
-#        herbGroup = data_mods_nested_i$herbGroup,
         design_settings
       )
     }
@@ -337,7 +336,6 @@ design_settings <- design_settings %>%
   }) # END TRY
   print(paste(i_row, 'completed out of', nrow(data_mods_nested_to_analyze)))
 } #END LOOP for site/species combination
-#data_power_analysis_results <- data_power_analysis_results %>% filter(!(stature))
 
 ######################
 
@@ -383,7 +381,7 @@ if(!exists('data_power_analysis_results')){
 
 windows(9,6) 
 
-### large stature sites
+### plot power analysis results for tall stature sites
 
 df <- data_power_analysis_results %>% left_join (stature_year, by = "siteID") %>% filter(!is.na(Power)) %>% as.data.frame()
 
@@ -391,13 +389,9 @@ df <- df %>% filter(!(clipIDs_per_plot == 1 & cores_per_clip ==2))
  df$subsamples <- df$clipIDs_per_plot * df$cores_per_clip
 
 df %>% filter(stature == "large" & PLOTS_PER_SITE == 20) %>%
-#   ggplot(aes(x=subsamples, y=Power, group=1)) +    # group=1 basically says that there is no group or that everything is in one group, not sure why it doesn't default to this if you don't specify actual grouping variable
    ggplot(aes(x=subsamples, y=Power, color=sizeCategory)) +  
-#   geom_line(linetype = "solid") + geom_point() +
    scale_color_manual(values=c("#009E73","#E69F00","black", "white")) +
    geom_line(aes(colour=sizeCategory, linetype = sizeCategory)) + geom_point() +
-#   geom_line(aes(colour=sizeCategory)) + geom_point() +
-#  scale_linetype_manual(values=c("twodash","twodash","twodash","solid")) + 
   scale_linetype_manual(values=c("twodash","twodash","solid","twodash")) + 
   geom_hline(yintercept = 0.80, col="gray", lty=2, lwd=1) +  
   scale_x_reverse(breaks = c(4,2,1)) + 
@@ -411,7 +405,6 @@ df %>% filter(stature == "large" & subsamples == 4) %>%
    ggplot(aes(x=PLOTS_PER_SITE, y=Power, color=sizeCategory)) +  
    scale_color_manual(values=c("#009E73","#E69F00","black", "white")) +
    geom_line(aes(colour=sizeCategory, linetype = sizeCategory)) + geom_point() +
-#  scale_linetype_manual(values=c("twodash","twodash","twodash","solid")) + 
   scale_linetype_manual(values=c("twodash","twodash","solid","twodash")) + 
   geom_hline(yintercept = 0.80, col="gray", lty=2, lwd=1) +  
   scale_x_reverse(breaks = c(30,20,15,10)) + 
@@ -422,7 +415,7 @@ df %>% filter(stature == "large" & subsamples == 4) %>%
  savePlot('power - large stature plot number','pdf')
 
 
-### small stature sites
+### plot power analysis results for short stature sites
 
 df <- data_power_analysis_results %>% left_join (stature_year, by = "siteID") %>% filter(!is.na(Power) & clipIDs_per_plot == 1) %>% as.data.frame()
  df$subsamples <- df$clipIDs_per_plot * df$cores_per_clip

@@ -1,6 +1,9 @@
 library(tidyverse)
 library(lme4)
 
+# The prerequisite for running this script is running the "BBC_field_02 variance partitioning and bootstrapping.R" script.
+
+
 # full data, look at year, sizeCategory and interaction in multiyear data
 
 fn_fit_models <- function(data_x, form_x) {
@@ -17,9 +20,7 @@ fn_fit_models <- function(data_x, form_x) {
   )
 }
 
-# # test fn_fit_models
-# fn_fit_models(data_x = data_nested$data[[1]],
-#               form_x = data_nested$form[[1]])
+# test fn_fit_models
 fn_fit_models_fixed <- function(data_x, form_x) {
   cat(as.data.frame(data_x)$siteID[1], "\n")
   tryCatch(
@@ -42,7 +43,7 @@ site_formulas <- read.delim("site_formulas.txt", header = TRUE, sep = "\t")
 
 bbc_fixed <- data_merge %>% mutate(response_log = log(response)) %>% select(-years) # years var was calculated before dropping sites without full design
      year_class <- bbc_fixed %>% distinct(eventID, siteID) %>% group_by(siteID) %>% summarise(years = n() )
-bbc_fixed <- bbc_fixed %>% left_join(year_class, by = "siteID") %>% filter(years == 2) # %>% filter(nlcd_count > 1) 
+bbc_fixed <- bbc_fixed %>% left_join(year_class, by = "siteID") %>% filter(years == 2)
 
 
 site_formulas_w_fixed_effects <- site_formulas
@@ -472,16 +473,13 @@ remove.packages(lmerTest)
 mod_comp_yr_raw <- rbind(mod_comp_2core2clip, mod_comp_1core2clip, mod_comp_per_2core1clip, mod_comp_1core1clip)
 #write_delim(mod_comp_yr_raw, paste0("mod_comp_yr_raw.txt_",Sys.Date(),".txt"), delim = "\t")
 
-#mod_comp_yr <- mod_comp_full %>% left_join(mod_comp_per_2core2clip, by = c("siteID","sizeCategory")) %>% left_join(mod_comp_per_1core2clip, by = c("siteID","sizeCategory")) %>% left_join(mod_comp_per_2core1clip, by = c("siteID","sizeCategory"))  %>% left_join(mod_comp_per_1core1clip, by = c("siteID","sizeCategory"))
 mod_comp_yr <- mod_comp_per_1core1clip %>% left_join(mod_comp_per_2core1clip, by = c("siteID","sizeCategory")) %>% left_join(mod_comp_per_1core2clip, by = c("siteID","sizeCategory")) %>% left_join(mod_comp_per_2core2clip, by = c("siteID","sizeCategory")) # %>% 
-#  left_join(stature_year, by = c("siteID"))
 write_delim(mod_comp_yr, paste0("mod_comp_yr_",Sys.Date(),".txt"), delim = "\t")
 
 mod_comp_yr_plot <- mod_comp_yr %>% 
   select(siteID, sizeCategory, yr_eff_lt_05_per_2core2clip, yr_eff_lt_05_per_1core2clip, yr_eff_lt_05_per_2core1clip, yr_eff_lt_05_per_1core1clip) %>% ungroup() %>% 
    rename("4" = "yr_eff_lt_05_per_2core2clip", "2" = "yr_eff_lt_05_per_1core2clip", "2.1" = "yr_eff_lt_05_per_2core1clip", "1" = "yr_eff_lt_05_per_1core1clip") %>%
   left_join(stature_year, by = "siteID")
-#mod_comp_yr_plot$'4' <- ifelse(mod_comp_yr_plot$stature == "small", NA, mod_comp_yr_plot$'4')
 mod_comp_yr_plot <- mod_comp_yr_plot %>% select(-stature_yr, -years) %>%
   pivot_longer(
     cols = !c(siteID,sizeCategory,stature), 
@@ -500,6 +498,7 @@ mod_comp_yr_plot <- mod_comp_yr_plot %>% full_join(mod_comp_full_p, by = c("site
 #mod_comp_yr_plot$siteID <- factor(mod_comp_yr_plot$siteID, levels=c("BART", "DCFS", "DEJU", "DSNY", "SCBI", "JORN", "TALL", "OAES", "ONAQ", "WOOD"))
 mod_comp_yr_plot$siteID <- factor(mod_comp_yr_plot$siteID, levels=c("DCFS", "DSNY", "JORN", "OAES", "ONAQ", "WOOD",   "BART", "DEJU", "SCBI", "TALL"))  
 
+# plot of year effect for sites with multiple years of data
 windows(9,6)
 mod_comp_yr_plot %>% 
   ggplot(aes(subsamples, percent, color=sizeCategory)) +  

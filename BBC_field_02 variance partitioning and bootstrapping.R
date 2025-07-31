@@ -4,10 +4,9 @@ library(performance) #icc partitions variance for random effects
 library(broom) # needed for tidy function
 library(infer) # includes rep_slice_sample function
 
+# The prerequisite for running this script is running the "BBC_field_01 read_and_prepare_data.R" script.
 
 data_merge <- data_merge_lumped
-#stature_year <- read.delim("stature_year.txt", header = TRUE, sep = "\t")
-#data_merge <- read.delim("data_merge_lumped.txt", header = TRUE, sep = "\t")
 
 stature_class <- data_merge %>% distinct(siteID, stature)
 
@@ -52,9 +51,6 @@ y_var <- 'response_log'
 data_in <- data_merge %>% filter(year2 == 1) # %>% filter(sizeCategory == "total") ########## for analyses just focusing on the more complete first year of sampling per site
 data_in$year <- as.numeric(data_in$year)
 
-#hist(data_in$response)
-#hist(data_in$response_log)
-
 ###################################################
 # modify random vars
 
@@ -63,7 +59,7 @@ for(i in my_varpart_list){
   data_in[,i] <- as_factor(data_in[,i])
 }
 
-###################################################
+# original modeling for each site by size class category
 data_single_var_r2 <- data.frame()
 for(site_id in (site_list)){
  for(size_id in (size_list)){
@@ -132,12 +128,8 @@ for(i in 1:length(site_list)){
   site_i <- site_list[i]
   size_j <- size_list[j]
   
-  # filter by significant anova results
   data_i <- data_single_var_r2 %>%
-     filter(siteID == site_i, sizeCategory == size_j #,
-#            anova_pval < 0.10,
-#            !is.na(r2_cond)
-)
+     filter(siteID == site_i, sizeCategory == size_j)
   
   y_var_i <- data_i$y_var[1]
   
@@ -283,7 +275,6 @@ data_mods_nofixed_AIC <- data_nested %>%
 ################################
 # Plot variance partitioning results (first available year only)
 ################
-# data_var_comps has 87 rows, of which only 47 have iccs > 0
 data_var_comps <- data_var_comps %>% left_join(stature_year, by = "siteID") %>% left_join(site_counts_mod, by = "siteID")
 
 data_var_comps <- data_var_comps %>%  # currently each of the three sizeCategories and the total are plotted separately
@@ -291,8 +282,8 @@ data_var_comps <- data_var_comps %>%  # currently each of the three sizeCategori
   mutate(`Total Variance` = 'r2_cond') 
 
 # Fig -- boxplot -- variance components by site
-#graphics.off()
 
+# plot sites with tall stature vegetation
 windows(18, 25, pointsize = 10)
 data_var_comps %>% filter(stature == "large") %>% 
   ggplot(aes(siteID, iccs, color=comps, fill=comps)) +  
@@ -312,6 +303,7 @@ data_var_comps %>% filter(stature == "large") %>%
 savePlot("TotalVar_keep 1st bout - large stature.pdf", 'pdf')
 
 
+# plot sites with short stature vegetation
 windows(18, 25, pointsize = 10)
 data_var_comps %>% filter(stature == "small") %>% 
   ggplot(aes(siteID, iccs, color=comps, fill=comps)) +  
@@ -430,22 +422,14 @@ data_mods_nofixed_AIC_multiyear <- data_nested_multiyear %>%
   select(c(siteID,form, AIC)) 
 
 ################
-# data_var_comps has 87 rows, of which only 47 have iccs > 0
 nlcd_count <- site_counts %>% distinct(siteID, nlcd_multi)
 data_var_comps_multiyear <- data_var_comps_multiyear %>% left_join(stature_year, by = "siteID") %>% left_join(nlcd_count, by = "siteID")
 
-data_var_comps_multiyear <- data_var_comps_multiyear %>% # filter(!is.na(iccs) & iccs > 0) %>%
-# d_plot <- data_var_comps %>% filter(!is.na(iccs) & iccs > 0 & n_per_plot >= 3.75) %>%  # only eventIDs with ~ 2 clips per plot x ~ 2 cores per clip (25 of 47)
-# d_plot <- data_var_comps %>% filter(!is.na(iccs) & iccs > 0 & n_per_plot < 3.75 & clips_per_plot > 1) %>%  # only eventIDs with less than full design (above) but more than just core reps (below) (5 of 47)
-# d_plot <- data_var_comps %>% filter(!is.na(iccs) & iccs > 0 & clips_per_plot == 1 ) %>%  # only eventIDs with 1 clip per plot (17 of 47)
+data_var_comps_multiyear <- data_var_comps_multiyear %>% 
   select(stature_yr, stature, years, nlcd_multi, siteID, y_var, comps, iccs, sizeCategoryDisplay) %>%
   mutate(`Total Variance` = 'r2_cond') 
 
-#d_plot <- d_plot %>% filter(n_per_plot >= 3.75) # only eventIDs with ~ 2 cores per clip x 2 clips per plot
-#d_plot <- d_plot %>% filter(n_per_plot >= 1.1 & n_per_plot < 3.5 & clips_per_plot > 1.1) # only eventIDs with ~ 2 cores per clip x 2 clips per plot
-
-# Fig 1 -- boxplot -- variance components by site
-#graphics.off()
+# plot variance partitioning results when incorporating temporal variable for sites with more than one time period 
 windows(18, 20, pointsize = 10)
 
 data_var_comps_multiyear %>% 
@@ -492,10 +476,6 @@ bbc_true_wide <- bbc_true %>% filter(year2 == 1 | year2 ==2) %>% pivot_wider(id_
 ############################################################################################################################################
 ################### Random resampling (very time consuming); later summarized for comparison to observed mean ##############################
 repetitions <- 1000
-
-
-#bbc_fullb <- data_merge  %>% filter(plotID != "SJER_053") # was missing one of four cores, which made whole script crash
-
 
 ## sample two cores in each of 2 clipIDs (both clips always get two cores - this resamples the current full sample design)
 # resampling summary: 1) create list of unique clipIDs, 2) slice 2 samples from within each clipID. 
@@ -625,8 +605,8 @@ calc_1core1clip <- do.call(bind_rows, lapply(calc_1core1clip_list, readRDS))
 ############################################################################################################
 ############# Summarize change in mass with different sampling scenarios (for comparison with mean) ########
 ###################################
-##########  2core2clip ###########
 
+##########  2core2clip ############
 
 rm(bbc_per_m2_multiyear_sub); rm(bbc_year_sub)
 #   Calculate mean and variability of mass (within a plot)
@@ -639,8 +619,7 @@ bbc_2core2clip<- calc_2core2clip%>%
 
 bbc_per_m2_multiyear_sub <- bbc_2core2clip%>% filter(year2 ==1 | year2 ==2)
 
-bbc_year_sub <- bbc_per_m2_multiyear_sub %>% group_by(sizeCategory,domainID,siteID,replicate) %>% do(tidy(glm(mass_g_m2 ~ year2, data = .) )) # %>% filter(term == "year22")
-################# no p-value, not sure why full model results are not visible
+bbc_year_sub <- bbc_per_m2_multiyear_sub %>% group_by(sizeCategory,domainID,siteID,replicate) %>% do(tidy(glm(mass_g_m2 ~ year2, data = .) ))
 bbc_year_sub$yearFlag <- ifelse(bbc_year_sub$p.value < 0.05, 1, 0)
 bbc_year_sub$yearDir <- ifelse(bbc_year_sub$estimate > 0, 1, 0)
 bbc_year_2core2clip_summary <- bbc_year_sub %>% group_by(sizeCategory,domainID, siteID) %>% 
@@ -685,8 +664,7 @@ bbc_2core1clip<- calc_2core1clip%>%
 
 bbc_per_m2_multiyear_sub <- bbc_2core1clip%>% filter(year2 ==1 | year2 ==2)
 
-bbc_year_sub <- bbc_per_m2_multiyear_sub %>% group_by(sizeCategory,domainID,siteID,replicate) %>% do(tidy(glm(mass_g_m2 ~ year2, data = .) )) # %>% filter(term == "year22")
-################# no p-value, not sure why full model results are not visible
+bbc_year_sub <- bbc_per_m2_multiyear_sub %>% group_by(sizeCategory,domainID,siteID,replicate) %>% do(tidy(glm(mass_g_m2 ~ year2, data = .) ))
 bbc_year_sub$yearFlag <- ifelse(bbc_year_sub$p.value < 0.05, 1, 0)
 bbc_year_sub$yearDir <- ifelse(bbc_year_sub$estimate > 0, 1, 0)
 bbc_year_2core1clip_summary <- bbc_year_sub %>% group_by(sizeCategory,domainID, siteID) %>%
@@ -780,14 +758,11 @@ bbc_1core1clip <- calc_1core1clip %>%
 #save(bbc_1core1clip, file = "bbc_1core1clip.rda")
 #load(file='bbc_1core1clip.rda')
 
-bbc_1core1clip_moist <- bbc_1core1clip # %>% left_join(sls_soilMoisture, by = c("year","plotID"))
-#bbc_1core1clip_moist <- bbc_1core1clip_moist %>% left_join(sls_soilMoisture_ave, by = c("year","siteID"))
-#bbc_1core1clip_moist$soilMoisture <- ifelse(is.na(bbc_1core1clip_moist$soilMoisture), bbc_1core1clip_moist$soilMoisture_ave, bbc_1core1clip_moist$soilMoisture)
+bbc_1core1clip_moist <- bbc_1core1clip
 
 bbc_per_m2_multiyear_sub <- bbc_1core1clip %>% filter(year2 ==1 | year2 ==2)
 
-bbc_year_sub <- bbc_per_m2_multiyear_sub %>% group_by(sizeCategory, domainID,siteID,replicate) %>% do(tidy(glm(mass_g_m2 ~ year2, data = .) )) # %>% filter(term == "year22")
-  ################# no p-value, not sure why full model results are not visible
+bbc_year_sub <- bbc_per_m2_multiyear_sub %>% group_by(sizeCategory, domainID,siteID,replicate) %>% do(tidy(glm(mass_g_m2 ~ year2, data = .) ))
 bbc_year_sub$yearFlag <- ifelse(bbc_year_sub$p.value < 0.05, 1, 0)
 bbc_year_sub$yearDir <- ifelse(bbc_year_sub$estimate > 0, 1, 0)
 bbc_year_1core1clip_summary <- bbc_year_sub %>% group_by(sizeCategory, domainID, siteID) %>% 
@@ -820,7 +795,7 @@ check_1core1clip_summary <- check_1core1clip %>% group_by(sizeCategory, year, ye
 
 ############## Combine the summaries of mean biomass for the different sampling scenarios #####################################
 
-bbc_site_list <- list(check_2core2clip_summary, check_2core1clip_summary, check_1core2clip_summary, check_1core1clip_summary)  # check_4cores_summary, check_2core1clip_summary,     
+bbc_site_list <- list(check_2core2clip_summary, check_2core1clip_summary, check_1core2clip_summary, check_1core1clip_summary)   
 bbc_site_summary <- bbc_site_list %>% reduce(full_join, by=c("year", "year2", "domainID", "siteID","sizeCategory") )
  View(bbc_site_summary)
  write.table(bbc_site_summary, paste0("year_site_bbc_",Sys.Date(),".txt"), sep = "\t", row.names=F)
@@ -851,7 +826,6 @@ ggplot(data = bbc_site_summary_large, aes(x=subsamples, y=percent)) +
   scale_color_manual(values=c("#009E73","#E69F00","black", "white")) +
   geom_point(aes(colour=sizeCategory)) + 
    geom_line(aes(colour=sizeCategory, linetype = year2)) + 
-#  scale_linetype_manual(values=c("twodash","solid")) + 
   geom_hline(yintercept = 90, col="gray", lty=2, lwd=1) +  # ylim(75, 100) + 
   scale_x_reverse() + 
   facet_wrap(~ siteID , ncol = 8) + 
@@ -869,7 +843,6 @@ ggplot(data = bbc_site_summary_small, aes(x=subsamples, y=percent)) +
   scale_color_manual(values=c("#009E73","#E69F00","black", "white")) +
   geom_point(aes(colour=sizeCategory)) + 
    geom_line(aes(colour=sizeCategory, linetype = year2)) + 
-#  scale_linetype_manual(values=c("twodash","solid")) + 
   geom_hline(yintercept = 90, col="gray", lty=2, lwd=1) +  # ylim(75, 100) + 
   scale_x_reverse(breaks=c(2, 1)) + 
   facet_wrap(~ siteID , ncol = 8) + 
