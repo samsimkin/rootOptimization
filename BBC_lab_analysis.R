@@ -9,10 +9,11 @@ library(broom) # includes broom function
 library(infer) # includes rep_slice_sample function
 library(ggplot2)
 
-
-bbcDat <- loadByProduct(dpID="DP1.10067.001", package = "basic", check.size = FALSE, token = Sys.getenv('NEON_TOKEN')) # pulled from portal 2023-05-02
+# Pull NEON BBC (root) data from  https://data.neonscience.org/data-products/DP1.10067.001/RELEASE-2023
+bbcDat <- loadByProduct(dpID="DP1.10067.001", package = "basic", release = "RELEASE-2023", include.provisional = FALSE, check.size = FALSE, token = Sys.getenv('NEON_TOKEN')) # pulled from portal 2023-05-02
  list2env(bbcDat ,.GlobalEnv) # unlist all data frames
 
+# prepare and merge dataframes
 bbc_rootmass_lt2 <- bbc_rootmass %>%  filter(sizeCategory != "2-10")
 rootmass_by_sampleID <- bbc_rootmass_lt2 %>% group_by(sampleID) %>% summarise(root_dryMass = sum(dryMass))
  
@@ -29,6 +30,7 @@ bbc_dilution$eventID <- paste0(bbc_dilution$siteID, "_", bbc_dilution$year)
 bbc_dil_unique_eventID <- bbc_dilution %>% select(siteID, year, eventID) %>% distinct()  
 bbc_dilution_yr_count <- bbc_dil_unique_eventID %>% group_by(siteID) %>% tally()
  
+# identify which sampling events were from the second time period
 bbc_dilution$year <- substr(bbc_dilution$collectDate,1,4)
 bbc_dilution$year2 <- ifelse(bbc_dilution$siteID == "BART" & bbc_dilution$year == "2016", 1, bbc_dilution$year)
  bbc_dilution$year2 <- ifelse(bbc_dilution$siteID == "BART" & bbc_dilution$year == "2022", 2, bbc_dilution$year2)
@@ -63,9 +65,7 @@ bbc_dilution$year2 <- ifelse(bbc_dilution$siteID == "WOOD" & bbc_dilution$year =
 # filter to remove outliers > 99 percentile for whole dataset and filter to remove fragMass < 0 g
 bbc_dilution <- bbc_dilution %>% filter(dryMass >= 0) %>%  filter(dryMass < quantile(dryMass, probs = 0.99, na.rm =TRUE))
 
-# if there are < 10 subsamples per core then drop the entire core
-#dil_is_10 <- bbc_dilution %>% group_by(sampleID) %>% summarise(nDM = n()) %>%  filter(nDM == 10)
-#  bbc_dilution <- merge(bbc_dilution, dil_is_10, all.y=TRUE)
+# keep cores with > 7 subsamples, thereby filtering out cores with insufficient subsamples
 dil_is_gt7 <- bbc_dilution %>% group_by(sampleID) %>% summarise(nDM = n()) %>%  filter(nDM > 7)
   bbc_dilution <- merge(bbc_dilution, dil_is_gt7, all.y=TRUE)
   bbc_dilution$nDM <- NULL
@@ -93,9 +93,7 @@ bbc_per_m2_multiyear_for_plotting <- bbc_per_m2_multiyear %>% group_by(domainID,
 
 bbc_per_m2_multiyear_plotID_count <- bbc_per_m2_multiyear %>% group_by(domainID, siteID, plotID, year2) %>% summarise(plot_count = n())
 
-#bbc_per_m2_multiyear_wide <- bbc_per_m2_multiyear  %>% pivot_wider(id_cols = c(domainID, siteID, plotID), names_from = year2, values_from = c(frag_g_m2) ) %>% 
-#     mutate(frag_change = frag_g_m2_2 - frag_g_m2_1, bbc_change = bbc_g_m2_2 - bbc_g_m2_1, bbc_change_per = 100*bbc_change/bbc_g_m2_1)
-
+## early figure not subsequently used
 ## Hack to add asterisks for the 4 sites with significant (p < 0.05) bout effect
 ## If sites or statistical results change then would need to change.
 dat_text <- data.frame(label = c("","","","","*","*","*","","","*","","","",""),
@@ -108,9 +106,9 @@ ggplot(data = bbc_per_m2_multiyear_for_plotting, aes(x=year2, y=bbc_g_m2)) + geo
    geom_text(data = dat_text,
   mapping = aes(x = -Inf, y = -Inf, label = label),
   hjust   = -3,   vjust   = -1, size =9)
-#  annotate("text",x=-1,y=-3.1,label="Scatterplot Display")+coord_cartesian(ylim=c(-2.5,3),clip="off")
 dev.off()
 
+# summary of full dataset before resampling
 frag_site <- bbc_per_m2 %>% group_by(year, year2, domainID, siteID) %>% summarise(frag_g_m2_true = mean(frag_g_m2, na.rm = TRUE), root_g_m2_true = mean(root_g_m2, na.rm = TRUE)) %>% 
   mutate(bbc_g_m2_true = frag_g_m2_true + root_g_m2_true, per_frag = 100 * frag_g_m2_true / (frag_g_m2_true + root_g_m2_true), "bbc-10%" = bbc_g_m2_true * 0.9, "bbc+10%" = bbc_g_m2_true * 1.1, "frag-10%" = frag_g_m2_true * 0.9, "frag+10%" = frag_g_m2_true * 1.1)
 frag_site_wide <- frag_site %>% filter(year2 == 1 | year2 ==2) %>% pivot_wider(id_cols = c(domainID, siteID), names_from = year2, values_from = c(frag_g_m2_true, bbc_g_m2_true) ) %>% 
@@ -120,6 +118,7 @@ frag_site_wide <- frag_site %>% filter(year2 == 1 | year2 ==2) %>% pivot_wider(i
             "bbc_change_per-5%" = bbc_change_per_true - (abs(bbc_change_per_true) * 0.05), "bbc_change_per+5%" = bbc_change_per_true  + (abs(bbc_change_per_true) * 0.05))
 frag_per_summary <- frag_site %>% select(siteID, year, per_frag)
 
+# summarize core sampling effort
 core_effort <- dil_per_m2 %>% group_by(domainID, siteID, year, year2) %>% tally() %>% rename("cores_per_site" = "n")
  cores_per_plot <- dil_per_m2 %>% group_by(domainID, siteID,plotID, year, year2) %>% tally()
 plot_effort <- cores_per_plot %>% group_by(domainID, siteID, year, year2) %>% tally() %>% rename("plots_per_site" = "n")
@@ -132,7 +131,7 @@ write.table(effort_wide, paste0("effort_",Sys.Date(),".txt"), sep = "\t", row.na
 groups <- unique(dil_calc$dilutionSampleID)
 repetitions <- 1000
 
-########## 10 ###############
+########## 10 resamples ###############
 dil_calc_10sub_rep = data.frame()
 sample_set <- 10 # full set is 10 dilutions, try subsets of 2, 4, 6, and 8
 for(i in 1:length(groups)){
@@ -182,6 +181,7 @@ frag_site_10sub <- dil_var_10sub %>% group_by(year, year2, domainID, siteID, rep
       bbc_reps_change_inRange = sum(bbcFlag_per), reps_Number = n(), bbc_per_change_inRange_10sub = round((bbc_reps_change_inRange/reps_Number)*100, digits=1)) %>%
       select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number, -bbc_reps_change_inRange) )
   
+# merge resampled dataset with full dataset and compare
 frag_site_10sub <- merge(frag_site_10sub, frag_site, by = c("year", "year2", "domainID", "siteID"))
 frag_site_10sub$bbcFlag <- ifelse(frag_site_10sub$bbc_g_m2 > frag_site_10sub$`bbc-10%` & frag_site_10sub$bbc_g_m2 < frag_site_10sub$`bbc+10%`, 1, 0)
 frag_site_10sub$fragFlag <- ifelse(frag_site_10sub$frag_g_m2 > frag_site_10sub$`frag-10%` & frag_site_10sub$frag_g_m2 < frag_site_10sub$`frag+10%`, 1, 0)
@@ -191,7 +191,7 @@ frag_site_10sub_summary <- frag_site_10sub %>% group_by(year, year2, domainID, s
             frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_10sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
   select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
-########## 9 ###############
+########## 9 resamples ###############
 dil_calc_9sub_rep = data.frame()
 sample_set <- 9 # full set is 10 dilutions, try subsets of 2, 4, 6, and 8
 for(i in 1:length(groups)){
@@ -239,6 +239,7 @@ frag_site_9sub <- dil_var_9sub %>% group_by(year, year2, domainID, siteID, repli
       frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_9sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
       select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
+# merge resampled dataset with full dataset and compare
 frag_site_9sub <- merge(frag_site_9sub, frag_site, by = c("year", "year2", "domainID", "siteID"))
 frag_site_9sub$bbcFlag <- ifelse(frag_site_9sub$bbc_g_m2 > frag_site_9sub$`bbc-10%` & frag_site_9sub$bbc_g_m2 < frag_site_9sub$`bbc+10%`, 1, 0)
 frag_site_9sub$fragFlag <- ifelse(frag_site_9sub$frag_g_m2 > frag_site_9sub$`frag-10%` & frag_site_9sub$frag_g_m2 < frag_site_9sub$`frag+10%`, 1, 0)
@@ -248,7 +249,7 @@ frag_site_9sub_summary <- frag_site_9sub %>% group_by(year, year2, domainID, sit
             frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_9sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
   select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
-########## 8 ###############
+########## 8 resamples ###############
 dil_calc_8sub_rep = data.frame()
 sample_set <- 8 # full set is 10 dilutions, try subsets of 2, 4, 6, and 8
 for(i in 1:length(groups)){
@@ -296,6 +297,7 @@ frag_site_8sub <- dil_var_8sub %>% group_by(year, year2, domainID, siteID, repli
       frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_8sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
       select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
+# merge resampled dataset with full dataset and compare
 frag_site_8sub <- merge(frag_site_8sub, frag_site, by = c("year", "year2", "domainID", "siteID"))
 frag_site_8sub$bbcFlag <- ifelse(frag_site_8sub$bbc_g_m2 > frag_site_8sub$`bbc-10%` & frag_site_8sub$bbc_g_m2 < frag_site_8sub$`bbc+10%`, 1, 0)
 frag_site_8sub$fragFlag <- ifelse(frag_site_8sub$frag_g_m2 > frag_site_8sub$`frag-10%` & frag_site_8sub$frag_g_m2 < frag_site_8sub$`frag+10%`, 1, 0)
@@ -305,7 +307,7 @@ frag_site_8sub_summary <- frag_site_8sub %>% group_by(year, year2, domainID, sit
             frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_8sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
   select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
-########## 7 ###############
+########## 7 resamples ###############
 dil_calc_7sub_rep = data.frame()
 sample_set <- 7 # full set is 10 dilutions, try subsets of 2, 4, 6, and 8
 for(i in 1:length(groups)){
@@ -353,6 +355,7 @@ frag_site_7sub <- dil_var_7sub %>% group_by(year, year2, domainID, siteID, repli
       frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_7sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
       select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
+# merge resampled dataset with full dataset and compare
 frag_site_7sub <- merge(frag_site_7sub, frag_site, by = c("year", "year2", "domainID", "siteID"))
 frag_site_7sub$bbcFlag <- ifelse(frag_site_7sub$bbc_g_m2 > frag_site_7sub$`bbc-10%` & frag_site_7sub$bbc_g_m2 < frag_site_7sub$`bbc+10%`, 1, 0)
 frag_site_7sub$fragFlag <- ifelse(frag_site_7sub$frag_g_m2 > frag_site_7sub$`frag-10%` & frag_site_7sub$frag_g_m2 < frag_site_7sub$`frag+10%`, 1, 0)
@@ -362,7 +365,7 @@ frag_site_7sub_summary <- frag_site_7sub %>% group_by(year, year2, domainID, sit
             frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_7sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
   select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
-########## 6 ###############
+########## 6 resamples ###############
 dil_calc_6sub_rep = data.frame()
 sample_set <- 6 # full set is 10 dilutions, try subsets of 2, 4, 6, and 8
 for(i in 1:length(groups)){
@@ -410,6 +413,7 @@ frag_site_6sub <- dil_var_6sub %>% group_by(year, year2, domainID, siteID, repli
       frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_6sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
       select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
+# merge resampled dataset with full dataset and compare
 frag_site_6sub <- merge(frag_site_6sub, frag_site, by = c("year", "year2", "domainID", "siteID"))
 frag_site_6sub$bbcFlag <- ifelse(frag_site_6sub$bbc_g_m2 > frag_site_6sub$`bbc-10%` & frag_site_6sub$bbc_g_m2 < frag_site_6sub$`bbc+10%`, 1, 0)
 frag_site_6sub$fragFlag <- ifelse(frag_site_6sub$frag_g_m2 > frag_site_6sub$`frag-10%` & frag_site_6sub$frag_g_m2 < frag_site_6sub$`frag+10%`, 1, 0)
@@ -419,7 +423,7 @@ frag_site_6sub_summary <- frag_site_6sub %>% group_by(year, year2, domainID, sit
             frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_6sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
   select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
-########## 5 ###############
+########## 5 resamples ###############
 dil_calc_5sub_rep = data.frame()
 sample_set <- 5 # full set is 10 dilutions, try subsets of 2, 4, 6, and 8
 for(i in 1:length(groups)){
@@ -467,6 +471,7 @@ frag_site_5sub <- dil_var_5sub %>% group_by(year, year2, domainID, siteID, repli
       frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_5sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
       select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
+# merge resampled dataset with full dataset and compare
 frag_site_5sub <- merge(frag_site_5sub, frag_site, by = c("year", "year2", "domainID", "siteID"))
 frag_site_5sub$bbcFlag <- ifelse(frag_site_5sub$bbc_g_m2 > frag_site_5sub$`bbc-10%` & frag_site_5sub$bbc_g_m2 < frag_site_5sub$`bbc+10%`, 1, 0)
 frag_site_5sub$fragFlag <- ifelse(frag_site_5sub$frag_g_m2 > frag_site_5sub$`frag-10%` & frag_site_5sub$frag_g_m2 < frag_site_5sub$`frag+10%`, 1, 0)
@@ -476,7 +481,7 @@ frag_site_5sub_summary <- frag_site_5sub %>% group_by(year, year2, domainID, sit
             frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_5sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
   select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
-########## 4 ###############
+########## 4 resamples ###############
 dil_calc_4sub_rep = data.frame()
 sample_set <- 4 # full set is 10 dilutions, try subsets of 2, 4, 6, and 8
 for(i in 1:length(groups)){
@@ -524,6 +529,7 @@ frag_site_4sub <- dil_var_4sub %>% group_by(year, year2, domainID, siteID, repli
       frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_4sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
       select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
+# merge resampled dataset with full dataset and compare
 frag_site_4sub <- merge(frag_site_4sub, frag_site, by = c("year", "year2", "domainID", "siteID"))
 frag_site_4sub$bbcFlag <- ifelse(frag_site_4sub$bbc_g_m2 > frag_site_4sub$`bbc-10%` & frag_site_4sub$bbc_g_m2 < frag_site_4sub$`bbc+10%`, 1, 0)
 frag_site_4sub$fragFlag <- ifelse(frag_site_4sub$frag_g_m2 > frag_site_4sub$`frag-10%` & frag_site_4sub$frag_g_m2 < frag_site_4sub$`frag+10%`, 1, 0)
@@ -533,7 +539,7 @@ frag_site_4sub_summary <- frag_site_4sub %>% group_by(year, year2, domainID, sit
             frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_4sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
   select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
-########## 3 ###############
+########## 3 resamples ###############
 dil_calc_3sub_rep = data.frame()
 sample_set <- 3 # full set is 10 dilutions, try subsets of 2, 4, 6, and 8
 for(i in 1:length(groups)){
@@ -581,6 +587,7 @@ frag_site_3sub <- dil_var_3sub %>% group_by(year, year2, domainID, siteID, repli
       frag_reps_inRange = sum(fragFlag), reps_Number = n(), frag_per_inRange_3sub = round((frag_reps_inRange/reps_Number)*100, digits=1) ) %>%
       select(c(-bbc_reps_inRange, -frag_reps_inRange, -reps_Number) )
 
+# merge resampled dataset with full dataset and compare
 frag_site_3sub <- merge(frag_site_3sub, frag_site, by = c("year", "year2", "domainID", "siteID"))
 frag_site_3sub$bbcFlag <- ifelse(frag_site_3sub$bbc_g_m2 > frag_site_3sub$`bbc-10%` & frag_site_3sub$bbc_g_m2 < frag_site_3sub$`bbc+10%`, 1, 0)
 frag_site_3sub$fragFlag <- ifelse(frag_site_3sub$frag_g_m2 > frag_site_3sub$`frag-10%` & frag_site_3sub$frag_g_m2 < frag_site_3sub$`frag+10%`, 1, 0)
